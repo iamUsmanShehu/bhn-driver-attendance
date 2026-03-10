@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Driver Training Attendance Register</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+/* --- General --- */
+body {
+    font-family: 'Arial', sans-serif;
+    background: #f4f6f9;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 20px auto;
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+}
+
+/* --- Header --- */
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.header img {
+    height: 60px;
+    margin-right: 15px;
+}
+
+.header h1 {
+    font-size: 1.8rem;
+    color: #2f2b5f;
+    margin: 0;
+}
+
+/* --- Buttons --- */
+button {
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    padding: 10px 15px;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.newTopic { background: #2f2b5f; color: #fff; margin-bottom: 15px;}
+.add { background: #28a745; color: #fff;}
+.export { background: #6c757d; color: #fff; margin-right: 5px;}
+.delete { background: #dc3545; color: #fff; }
+.edit { background: #fd7e14; color: #fff; margin-right: 5px;}
+.markAll { background: #28a745; color: #fff; padding: 4px 6px; font-size: 12px; }
+
+button:hover { opacity: 0.85; }
+
+/* --- Form --- */
+form {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 25px;
+    background: #f0f4f8;
+    padding: 15px;
+    border-radius: 8px;
+}
+
+form input {
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    font-size: 14px;
+}
+
+form input:focus {
+    outline: none;
+    border-color: #2f2b5f;
+    box-shadow: 0 0 5px rgba(0,123,255,0.3);
+}
+
+/* --- Tables --- */
+.table-container {
+    overflow-x: auto;
+    margin-bottom: 25px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 800px;
+}
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: center;
+}
+
+th {
+    background: #2f2b5f;
+    color: #fff;
+    position: sticky;
+    top: 0;
+}
+
+tbody tr:nth-child(even) {background: #f9f9f9;}
+tbody tr:hover {background: #e6f0ff;}
+
+/* --- Summary --- */
+.summary {
+    margin-top: 8px;
+    background: #eef6fb;
+    padding: 10px;
+    border-radius: 6px;
+    font-weight: bold;
+}
+
+/* --- Responsive --- */
+@media(max-width: 768px){
+    form { grid-template-columns: 1fr; }
+    button { width: 100%; margin-bottom: 5px; }
+}
+@media print{
+    body * {visibility:hidden;}
+    table, table * {visibility:visible;}
+    table {position:absolute; left:0; top:0; width:100%;}
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- --- Header with PHN Logo --- -->
+<div class="header">
+    <img src="logo_bhn.png" alt="PHN Logo">
+    <h1>Driver Training Attendance</h1>
+</div>
+
+<!-- --- Control Buttons --- -->
+<button class="newTopic" onclick="addTopic()">Add New Topic</button>
+<button class="export" onclick="exportFullSummaryCSV()">Export Full Training Summary</button>
+<button class="export" onclick="printFullSummary()">Print Full Training Summary</button>
+<button class="delete" onclick="clearDatabase()">Clear All Attendance</button>
+
+<!-- --- Driver Form --- -->
+<form id="driverForm">
+<input type="text" id="code" placeholder="Code" required>
+<input type="text" id="sap" placeholder="SAP Code" required>
+<input type="text" id="driverName" placeholder="Driver Name" required>
+<input type="text" id="licence" placeholder="Licence Number" required>
+<input type="text" id="contractor" placeholder="Contractor" required>
+<button class="add" type="submit">Add Driver</button>
+</form>
+
+<!-- --- Topics Container --- -->
+<div id="topicsContainer"></div>
+
+</div>
+
+<script>
+// --- Data ---
+let topics = JSON.parse(localStorage.getItem("topics")) || [];
+let currentTopicIndex = topics.length ? topics.length-1 : 0;
+function save(){localStorage.setItem("topics", JSON.stringify(topics));}
+
+// --- Render Topics ---
+function render(){
+    const container = document.getElementById("topicsContainer");
+    container.innerHTML = "";
+    topics.forEach((topic,tIndex)=>{
+        const topicDiv = document.createElement("div");
+        topicDiv.classList.add("table-container");
+        topicDiv.innerHTML = `<h3>${topic.name}</h3>
+        <table id="table-${tIndex}">
+            <thead>
+                <tr>
+                    <th>SN</th><th>Code</th><th>SAP</th><th>Driver Name</th><th>Licence</th><th>Contractor</th>
+                    <th>Actions</th><th>Attendance <button class="markAll" onclick="markAll(${tIndex})">✔ All</button></th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <div style="margin:10px 0;">
+            <button class="export" onclick="downloadCSV(${tIndex})">Export CSV</button>
+            <button class="export" onclick="exportPDF(${tIndex})">Export PDF</button>
+            <button class="export" onclick="printPresent(${tIndex})">Print</button>
+        </div>
+        <div class="summary" id="summary-${tIndex}"></div>`;
+        container.appendChild(topicDiv);
+        renderTable(tIndex);
+    });
+    document.getElementById("driverForm").style.display = (topics.length && currentTopicIndex===topics.length-1) ? "grid" : "none";
+}
+
+// --- Render Table ---
+function renderTable(tIndex){
+    const topic = topics[tIndex];
+    const tbody = document.querySelector(`#table-${tIndex} tbody`);
+    tbody.innerHTML = "";
+    topic.drivers.forEach((d,i)=>{
+        tbody.innerHTML += `<tr>
+            <td>${i+1}</td>
+            <td>${d.code}</td>
+            <td>${d.sap}</td>
+            <td>${d.name}</td>
+            <td>${d.licence}</td>
+            <td>${d.contractor}</td>
+            <td>${tIndex===topics.length-1 ? `<button class="edit" onclick="editDriver(${tIndex},${i})">Edit</button>
+                <button class="delete" onclick="deleteDriver(${tIndex},${i})">Delete</button>` : ''}</td>
+            <td><input type="checkbox" ${d.present?"checked":""} onclick="toggle(${tIndex},${i})"></td>
+        </tr>`;
+    });
+    updateSummary(tIndex);
+}
+
+// --- Add Topic ---
+function addTopic(){
+    let name = prompt("Enter Topic Name");
+    if(!name) return;
+    let newDrivers = topics.length ? topics[topics.length-1].drivers.map(d=>({...d,present:false})) : [];
+    topics.push({name, drivers:newDrivers});
+    currentTopicIndex = topics.length-1;
+    save();
+    render();
+}
+
+// --- Add Driver ---
+document.getElementById("driverForm").addEventListener("submit", function(e){
+    e.preventDefault();
+    if(!topics.length){ alert("Add a topic first"); return; }
+    let driver = {
+        code: document.getElementById("code").value,
+        sap: document.getElementById("sap").value,
+        name: document.getElementById("driverName").value,
+        licence: document.getElementById("licence").value,
+        contractor: document.getElementById("contractor").value,
+        present: false
+    };
+    topics[currentTopicIndex].drivers.push(driver);
+    save(); render(); this.reset();
+});
+
+// --- Toggle Attendance ---
+function toggle(tIndex,dIndex){
+    topics[tIndex].drivers[dIndex].present = !topics[tIndex].drivers[dIndex].present;
+    save(); renderTable(tIndex);
+}
+
+// --- Mark All Present ---
+function markAll(tIndex){
+    topics[tIndex].drivers.forEach(d=>d.present=true);
+    save(); renderTable(tIndex);
+}
+
+// --- Edit Driver (All Fields) ---
+function editDriver(tIndex,dIndex){
+    let d = topics[tIndex].drivers[dIndex];
+    let code = prompt("Code", d.code);
+    let sap = prompt("SAP Code", d.sap);
+    let name = prompt("Driver Name", d.name);
+    let licence = prompt("Licence", d.licence);
+    let contractor = prompt("Contractor", d.contractor);
+    if(code) d.code=code; if(sap) d.sap=sap; if(name) d.name=name; if(licence) d.licence=licence; if(contractor) d.contractor=contractor;
+    save(); renderTable(tIndex);
+}
+
+// --- Delete Driver ---
+function deleteDriver(tIndex,dIndex){
+    if(confirm("Delete this driver?")){ topics[tIndex].drivers.splice(dIndex,1); save(); renderTable(tIndex); }
+}
+
+// --- Summary ---
+function updateSummary(tIndex){
+    const topic=topics[tIndex];
+    const sumDiv=document.getElementById(`summary-${tIndex}`);
+    const presentCount = topic.drivers.filter(d=>d.present).length;
+    sumDiv.innerHTML=`Total Drivers: ${topic.drivers.length} | Present: ${presentCount}`;
+}
+
+// --- CSV/PDF/Print Functions ---
+function downloadCSV(tIndex){
+    const topic = topics[tIndex];
+    let csv = ["SN,Code,SAP,Driver Name,Licence,Contractor,Attendance"];
+    let sn=1;
+    topic.drivers.forEach(d=>{ if(d.present){csv.push([sn++,d.code,d.sap,d.name,d.licence,d.contractor,"Present"].join(","));}});
+    if(sn===1){ alert("No present drivers"); return; }
+    let blob = new Blob([csv.join("\n")],{type:"text/csv"});
+    let a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`${topic.name}_attendance.csv`; a.click();
+}
+
+function exportPDF(tIndex){
+    const {jsPDF} = window.jspdf;
+    const topic = topics[tIndex];
+    let presentDrivers = topic.drivers.filter(d=>d.present);
+    if(!presentDrivers.length){ alert("No present drivers"); return; }
+    let doc = new jsPDF(); doc.setFontSize(12); doc.text(`Attendance: ${topic.name}`,10,10);
+    let y=20; doc.text("SN | Code | SAP | Driver | Licence | Contractor | Attendance",10,y); y+=10;
+    presentDrivers.forEach((d,i)=>{ doc.text([i+1,d.code,d.sap,d.name,d.licence,d.contractor,"Present"].join(" | "),10,y); y+=10; });
+    doc.save(`${topic.name}_attendance.pdf`);
+}
+
+function printPresent(tIndex){
+    const topic = topics[tIndex];
+    const table = document.querySelector(`#table-${tIndex}`);
+    const rows = table.querySelectorAll("tbody tr");
+    rows.forEach((row,i)=>row.style.display=topic.drivers[i].present?"table-row":"none");
+    window.print();
+    rows.forEach(row=>row.style.display="table-row");
+}
+
+// --- Full Summary ---
+function getFullSummaryData(){
+    let allRows=[]; topics.forEach(topic=>{topic.drivers.forEach(d=>{if(d.present) allRows.push({...d, topic:topic.name});});}); return allRows;
+}
+
+function exportFullSummaryCSV(){
+    let data=getFullSummaryData();
+    if(!data.length){alert("No attendance"); return;}
+    let csv=["SN,Code,SAP,Driver Name,Licence,Contractor,Topic"];
+    data.forEach((d,i)=>csv.push([i+1,d.code,d.sap,d.name,d.licence,d.contractor,d.topic].join(",")));
+    let blob = new Blob([csv.join("\n")],{type:"text/csv"});
+    let a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="Full_Training_Summary.csv"; a.click();
+}
+
+function printFullSummary(){
+    let data=getFullSummaryData();
+    if(!data.length){alert("No attendance"); return;}
+    let div=document.createElement("div"); div.style.overflowX="auto";
+    let table=document.createElement("table"); table.style.width="100%"; table.style.borderCollapse="collapse";
+    let thead=document.createElement("thead"); let tr=document.createElement("tr");
+    ["SN","Code","SAP","Driver Name","Licence","Contractor","Topic"].forEach(h=>{let th=document.createElement("th"); th.innerText=h; th.style.border="1px solid #ccc"; th.style.padding="4px"; th.style.background="#007bff"; th.style.color="white"; tr.appendChild(th);});
+    thead.appendChild(tr); table.appendChild(thead);
+    let tbody=document.createElement("tbody");
+    data.forEach((d,i)=>{let tr=document.createElement("tr"); [i+1,d.code,d.sap,d.name,d.licence,d.contractor,d.topic].forEach(v=>{let td=document.createElement("td"); td.innerText=v; td.style.border="1px solid #ccc"; td.style.padding="4px"; td.style.textAlign="center"; tr.appendChild(td);}); tbody.appendChild(tr);});
+    table.appendChild(tbody); div.appendChild(table); document.body.appendChild(div); window.print(); document.body.removeChild(div);
+}
+
+// --- Clear Database ---
+function clearDatabase(){if(confirm("Are you sure you want to clear all attendance data?")){topics=[]; localStorage.removeItem("topics"); currentTopicIndex=0; document.getElementById("topicsContainer").innerHTML=""; document.getElementById("driverForm").style.display="grid";}}
+
+render();
+</script>
+</body>
+</html>
