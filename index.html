@@ -2,13 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Driver Training Attendance System</title>
+<title>BHN Driver Attendance</title>
 
-<!-- Face API CDN -->
-<script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-
+<!-- Face API -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <!-- XLSX for Excel export -->
-<script defer src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
 <style>
 body{font-family:Arial,sans-serif;text-align:center;background:#f4f4f4;margin:0;padding:0;}
@@ -265,14 +264,13 @@ function showNotification(name){
 }
 
 // Initialize
-async function init(){
+window.onload = async function(){
   loadData();
   loadLastTopic();
   await loadModels();
   await startCamera();
   labeledDescriptors=drivers.map(d=>new faceapi.LabeledFaceDescriptors(d.name,[d.descriptor]));
-}
-init();
+};
 </script>
 </body>
 </html>
