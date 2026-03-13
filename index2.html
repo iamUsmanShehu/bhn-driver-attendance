@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Driver Training Attendance System</title>
+
+<!-- Face API CDN -->
+<script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+<!-- XLSX for Excel export -->
+<script defer src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+<style>
+body{font-family:Arial,sans-serif;text-align:center;background:#f4f4f4;margin:0;padding:0;}
+h1{margin:20px 0;}
+.camera-box{position:relative;display:inline-block;}
+video{border:3px solid #333;border-radius:10px;}
+canvas{position:absolute;top:0;left:0;}
+form{margin:20px auto;display:flex;flex-wrap:wrap;gap:10px;justify-content:center;}
+form input,select,button{padding:10px;border-radius:5px;border:1px solid #ccc;font-size:14px;}
+table{margin:auto;margin-top:20px;border-collapse:collapse;width:90%;}
+th,td{border:1px solid #ccc;padding:10px;text-align:center;}
+.summary{margin-top:15px;font-weight:bold;}
+@media(max-width:768px){form{flex-direction:column;width:90%;}}
+button{cursor:pointer;padding:8px 12px;margin:3px;border-radius:5px;border:none;background:#2f2b5f;color:white;}
+button:hover{opacity:0.85;}
+#notification{position: fixed;top: 20px;right: 20px;background: #28a745;color: white;padding: 15px 20px;border-radius: 8px;box-shadow: 0 4px 12px rgba(0,0,0,0.2);display: none;font-weight: bold;z-index: 1000;}
+</style>
+</head>
+<body>
+
+<h1>Driver Training Attendance</h1>
+
+<form id="driverForm">
+<input type="text" id="driverName" placeholder="Driver Name" required>
+<input type="text" id="driverId" placeholder="Driver ID" required>
+<input type="text" id="phone" placeholder="Phone Number" required>
+<select id="topicSelect" required onchange="setCurrentTopic(this.value)">
+<option value="">Select Topic</option>
+<option>TYRE & SAFETY</option>
+<option>JOURNEY MANAGEMENT</option>
+<option>ROAD TRAFFIC REGULATION & OFFENCE</option>
+<option>ROAD VEHICLE BREAKDOWN AND PREVENTION</option>
+<option>BASIC ROAD TRAFFIC SIGNS AND MARKINGS</option>
+<option>DRIVER AND VEHICLE COMMUNICATION</option>
+<option>INDUCTION</option>
+<option>VEHICLE MAINTENANCE</option>
+<option>DRIVER/VEHICLE CHECKLIST</option>
+<option>VEHICLE KNOWLEDGE</option>
+<option>AUTOMOBILE BASIC FIRE PREVENTION</option>
+<option>ROLL-OVER INCIDENT PERCEPTION</option>
+<option>MOTORCYCLE INCIDENT PERCEPTION</option>
+<option>CAUSES OF ROAD ACCIDENT</option>
+<option>DEFENSIVE DRIVING TECHNIQUES</option>
+<option>BEHAVIOURAL DEFENSIVE DRIVING TRAINING</option>
+<option>ELECTRONIC PROOF OF DELIVERY</option>
+</select>
+<button type="submit">Register Driver</button>
+</form>
+
+<div style="margin:15px 0;">
+<button onclick="markAllTopic()">Mark All Present for Topic</button>
+<button onclick="resetTopic()">Reset Attendance for Topic</button>
+</div>
+
+<div class="camera-box">
+<video id="video" width="640" height="480" autoplay muted></video>
+<canvas id="overlay"></canvas>
+</div>
+
+<h2>Attendance Dashboard</h2>
+<div class="summary">
+Total Drivers: <span id="totalDrivers">0</span> | Present: <span id="presentCount">0</span> | Absent: <span id="absentCount">0</span>
+</div>
+
+<table id="attendanceTable">
+<thead>
+<tr>
+<th>Name</th><th>ID</th><th>Phone</th><th>Topic</th><th>Time</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+
+<button onclick="exportExcel()">Download Excel</button>
+
+<div id="notification">Attendance Recorded!</div>
+
+<script>
+let drivers=[],attendance={},labeledDescriptors=[],currentTopic="";
+
+// Load/save data
+function loadData(){
+  drivers=JSON.parse(localStorage.getItem("drivers"))||[];
+  attendance=JSON.parse(localStorage.getItem("attendance"))||{};
+  updateAllTables();
+}
+function saveData(){
+  localStorage.setItem("drivers",JSON.stringify(drivers));
+  localStorage.setItem("attendance",JSON.stringify(attendance));
+}
+
+// Topic selection
+function setCurrentTopic(topic){
+  if(topic) currentTopic = topic;
+  localStorage.setItem("currentTopic", topic);
+}
+function loadLastTopic(){
+  const lastTopic = localStorage.getItem("currentTopic");
+  if(lastTopic){
+    document.getElementById("topicSelect").value = lastTopic;
+    currentTopic = lastTopic;
+  }
+}
+
+// Face API models
+async function loadModels(){
+  await faceapi.nets.tinyFaceDetector.loadFromUri("https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights");
+  await faceapi.nets.faceLandmark68Net.loadFromUri("https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights");
+  await faceapi.nets.faceRecognitionNet.loadFromUri("https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights");
+}
+
+// Start camera
+async function startCamera(){
+  const stream=await navigator.mediaDevices.getUserMedia({video:{}});
+  const video=document.getElementById("video");
+  video.srcObject=stream;
+  return new Promise(resolve=>{
+    video.onloadedmetadata=()=>{video.play(); resolve();}
+  });
+}
+
+// Register driver
+document.getElementById("driverForm").addEventListener("submit",async(e)=>{
+  e.preventDefault();
+  const name=document.getElementById("driverName").value.trim();
+  const id=document.getElementById("driverId").value.trim();
+  const phone=document.getElementById("phone").value.trim();
+  const topic=document.getElementById("topicSelect").value;
+  if(!name||!id||!phone||!topic) return alert("Fill all fields");
+  currentTopic=topic;
+
+  const video=document.getElementById("video");
+  const captureCanvas=document.createElement("canvas");
+  captureCanvas.width=video.videoWidth;
+  captureCanvas.height=video.videoHeight;
+  captureCanvas.getContext("2d").drawImage(video,0,0);
+
+  const img=new Image();
+  img.src=captureCanvas.toDataURL("image/jpeg");
+  img.onload=async ()=>{
+    const detection=await faceapi.detectSingleFace(img,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+    if(!detection) return alert("Face not detected, try again");
+    drivers.push({name,id,phone,topic,descriptor:detection.descriptor});
+    saveData();
+    labeledDescriptors=drivers.map(d=>new faceapi.LabeledFaceDescriptors(d.name,[d.descriptor]));
+    updateDashboard();
+    alert(`Driver ${name} registered!`);
+    document.getElementById("driverForm").reset();
+  };
+});
+
+// Recognition loop
+document.getElementById("video").addEventListener("play",()=>{
+  const displaySize={width:video.width,height:video.height};
+  faceapi.matchDimensions(document.getElementById("overlay"),displaySize);
+  setInterval(async()=>{
+    if(labeledDescriptors.length===0) return;
+    const detections=await faceapi.detectAllFaces(video,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
+    const resized=faceapi.resizeResults(detections,displaySize);
+    const ctx=document.getElementById("overlay").getContext("2d");
+    ctx.clearRect(0,0,overlay.width,overlay.height);
+    const faceMatcher=new faceapi.FaceMatcher(labeledDescriptors,0.6);
+    resized.forEach(d=>{
+      const result=faceMatcher.findBestMatch(d.descriptor);
+      new faceapi.draw.DrawBox(d.detection.box,{label:result.toString()}).draw(ctx);
+      if(result.label!=="unknown") markAttendance(result.label);
+    });
+  },1000);
+});
+
+// Attendance
+function markAttendance(name){
+  if(attendance[name]) return;
+  const driver=drivers.find(d=>d.name===name);
+  if(!driver) return;
+  attendance[name]={...driver,time:new Date().toLocaleTimeString()};
+  saveData();
+  updateTable(driver.name,driver.id,driver.phone,driver.topic,attendance[name].time);
+  updateDashboard();
+  speak(name);
+  showNotification(name);
+}
+
+function updateTable(name,id,phone,topic,time){
+  const tbody=document.getElementById("attendanceTable").querySelector("tbody");
+  const row=tbody.insertRow();
+  row.insertCell(0).innerText=name;
+  row.insertCell(1).innerText=id;
+  row.insertCell(2).innerText=phone;
+  row.insertCell(3).innerText=topic;
+  row.insertCell(4).innerText=time;
+}
+
+function updateDashboard(){
+  document.getElementById("totalDrivers").innerText=drivers.length;
+  document.getElementById("presentCount").innerText=Object.keys(attendance).length;
+  document.getElementById("absentCount").innerText=(drivers.length-Object.keys(attendance).length);
+}
+
+function updateAllTables(){
+  const tbody=document.getElementById("attendanceTable").querySelector("tbody");
+  tbody.innerHTML="";
+  Object.values(attendance).forEach(d=>updateTable(d.name,d.id,d.phone,d.topic,d.time));
+  updateDashboard();
+}
+
+function speak(name){
+  const msg=new SpeechSynthesisUtterance(`Attendance recorded for ${name}`);
+  speechSynthesis.speak(msg);
+}
+
+// Excel export
+function exportExcel(){
+  if(Object.keys(attendance).length===0) return alert("No attendance to export");
+  const data=Object.values(attendance).map(d=>[d.name,d.id,d.phone,d.topic,d.time]);
+  data.unshift(["Name","ID","Phone","Topic","Time"]);
+  const ws=XLSX.utils.aoa_to_sheet(data);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Attendance");
+  XLSX.writeFile(wb,"Driver_Attendance.xlsx");
+}
+
+// Topic functions
+function markAllTopic(){
+  if(!currentTopic) return alert("Select a topic first");
+  drivers.filter(d=>d.topic===currentTopic).forEach(d=>{
+    if(!attendance[d.name]){
+      attendance[d.name]={...d,time:new Date().toLocaleTimeString()};
+      updateTable(d.name,d.id,d.phone,d.topic,attendance[d.name].time);
+      speak(d.name);
+      showNotification(d.name);
+    }
+  });
+  saveData();
+  updateDashboard();
+}
+
+function resetTopic(){
+  if(!currentTopic) return alert("Select a topic first");
+  if(!confirm(`Reset attendance for all drivers in topic: ${currentTopic}?`)) return;
+  Object.keys(attendance).forEach(name=>{
+    if(attendance[name].topic===currentTopic) delete attendance[name];
+  });
+  saveData();
+  updateAllTables();
+}
+
+// Notification
+function showNotification(name){
+  const notif=document.getElementById("notification");
+  notif.innerText=`Attendance recorded for ${name} ✔`;
+  notif.style.display="block";
+  setTimeout(()=>{notif.style.display="none";},2000);
+}
+
+// Initialize
+async function init(){
+  loadData();
+  loadLastTopic();
+  await loadModels();
+  await startCamera();
+  labeledDescriptors=drivers.map(d=>new faceapi.LabeledFaceDescriptors(d.name,[d.descriptor]));
+}
+init();
+</script>
+</body>
+</html>
