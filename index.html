@@ -2,67 +2,72 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>BHN Driver Attendance V3</title>
+<title>BHN AI Driver Attendance</title>
 
-<script defer src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
 <style>
 
 body{
 font-family:Arial;
-background:#f4f6f9;
+background:#f4f6fb;
+text-align:center;
 margin:0;
-padding:20px;
 }
 
-h1{
-text-align:center;
+header{
+background:#1e2a78;
+color:white;
+padding:15px;
+font-size:22px;
 }
 
 .container{
-max-width:1000px;
+width:95%;
+max-width:1200px;
 margin:auto;
-background:white;
-padding:20px;
-border-radius:10px;
-box-shadow:0 0 10px rgba(0,0,0,0.1);
+}
+
+.controls{
+display:flex;
+flex-wrap:wrap;
+gap:10px;
+justify-content:center;
+margin:15px 0;
+}
+
+input,select,button{
+padding:10px;
+border-radius:6px;
+border:1px solid #ccc;
 }
 
 button{
-padding:10px;
-margin:5px;
+background:#1e2a78;
+color:white;
 cursor:pointer;
 }
 
-select,input{
-padding:8px;
-margin:5px;
-}
-
 video{
-border:2px solid black;
-width:320px;
+border:3px solid #333;
+border-radius:10px;
 }
 
 table{
 width:100%;
 border-collapse:collapse;
 margin-top:20px;
+background:white;
 }
 
 th,td{
-border:1px solid #ccc;
+border:1px solid #ddd;
 padding:8px;
-text-align:center;
 }
 
-.present{
-background:#8bc34a;
-color:white;
-}
-
-.absent{
-background:#f44336;
+th{
+background:#1e2a78;
 color:white;
 }
 
@@ -71,238 +76,308 @@ color:white;
 
 <body>
 
+<header>BHN AI Driver Attendance System</header>
+
 <div class="container">
-
-<h1>BHN Driver Attendance V3</h1>
-
-<h3>Training Topic</h3>
-
-<select id="topicSelect"></select>
-<input id="newTopic" placeholder="Add new topic">
-<button onclick="addTopic()">Add Topic</button>
-
-<hr>
 
 <h3>Register Driver</h3>
 
-<input id="driverName" placeholder="Driver Name">
-<br>
+<div class="controls">
 
-<video id="video" autoplay muted></video>
-<br>
+<input id="name" placeholder="Driver Name">
+<input id="driverId" placeholder="Driver ID">
+<input id="phone" placeholder="Phone">
 
-<button onclick="startCamera()">Start Camera</button>
-<button onclick="registerDriver()">Register Driver</button>
+<button onclick="registerDriver()">Register Face</button>
 
-<hr>
+</div>
 
-<h3>Drivers</h3>
+<video id="video" width="400" height="300" autoplay muted></video>
 
-<table id="driverTable">
+<h3>Training Session</h3>
+
+<div class="controls">
+
+<select id="topic">
+<option value="">Select Topic</option>
+<option>TYRE & SAFETY</option>
+<option>JOURNEY MANAGEMENT</option>
+<option>DEFENSIVE DRIVING</option>
+<option>VEHICLE MAINTENANCE</option>
+</select>
+
+<button onclick="startSession()">Start Session</button>
+<button onclick="exportExcel()">Export Excel</button>
+
+</div>
+
+<h3>Attendance</h3>
+
+<table>
+
 <thead>
 <tr>
-<th>#</th>
 <th>Name</th>
-<th>Attendance</th>
-<th>Delete</th>
+<th>ID</th>
+<th>Phone</th>
+<th>Status</th>
 </tr>
 </thead>
-<tbody></tbody>
+
+<tbody id="tableBody"></tbody>
+
 </table>
-
-<br>
-
-<button onclick="exportCSV()">Export CSV</button>
 
 </div>
 
 <script>
 
 let drivers = JSON.parse(localStorage.getItem("drivers")) || []
-let topics = JSON.parse(localStorage.getItem("topics")) || ["Orientation"]
-let attendance = JSON.parse(localStorage.getItem("attendance")) || {}
+let sessions = JSON.parse(localStorage.getItem("sessions")) || {}
 
-const video = document.getElementById("video")
+let currentTopic=""
+let today=new Date().toISOString().split("T")[0]
 
-function saveData(){
-localStorage.setItem("drivers",JSON.stringify(drivers))
-localStorage.setItem("topics",JSON.stringify(topics))
-localStorage.setItem("attendance",JSON.stringify(attendance))
-}
-
-function loadTopics(){
-
-const select=document.getElementById("topicSelect")
-select.innerHTML=""
-
-topics.forEach(t=>{
-let option=document.createElement("option")
-option.value=t
-option.textContent=t
-select.appendChild(option)
-})
-
-}
-
-function addTopic(){
-
-const topic=document.getElementById("newTopic").value
-if(!topic) return
-
-topics.push(topic)
-
-attendance[topic]={}
-
-drivers.forEach(d=>{
-attendance[topic][d.id]=false
-})
-
-saveData()
-loadTopics()
-renderTable()
-
-}
+let labeledDescriptors=[]
 
 async function startCamera(){
 
-const stream = await navigator.mediaDevices.getUserMedia({video:true})
-video.srcObject=stream
+const stream=await navigator.mediaDevices.getUserMedia({video:true})
+
+document.getElementById("video").srcObject=stream
 
 }
 
-function registerDriver(){
+startCamera()
 
-const name=document.getElementById("driverName").value
-if(!name) return
 
-const id=Date.now()
+
+async function loadModels(){
+
+await faceapi.nets.tinyFaceDetector.loadFromUri("./weights")
+await faceapi.nets.faceLandmark68Net.loadFromUri("./weights")
+await faceapi.nets.faceRecognitionNet.loadFromUri("./weights")
+
+}
+
+loadModels()
+
+
+
+async function registerDriver(){
+
+let name=document.getElementById("name").value
+let id=document.getElementById("driverId").value
+let phone=document.getElementById("phone").value
+
+if(!name||!id||!phone){
+
+alert("Fill all fields")
+return
+
+}
+
+const video=document.getElementById("video")
+
+const detection=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor()
+
+if(!detection){
+
+alert("Face not detected")
+
+return
+
+}
 
 drivers.push({
+
+name,
 id,
-name
-})
-
-topics.forEach(topic=>{
-
-if(!attendance[topic])
-attendance[topic]={}
-
-attendance[topic][id]=false
+phone,
+descriptor:Array.from(detection.descriptor)
 
 })
 
-saveData()
+save()
+
+alert("Driver registered")
+
+buildDescriptors()
+
 renderTable()
 
 }
 
-function toggleAttendance(id){
 
-const topic=document.getElementById("topicSelect").value
 
-attendance[topic][id]=!attendance[topic][id]
+function save(){
 
-saveData()
+localStorage.setItem("drivers",JSON.stringify(drivers))
+localStorage.setItem("sessions",JSON.stringify(sessions))
+
+}
+
+
+
+function startSession(){
+
+let topic=document.getElementById("topic").value
+
+if(!topic){
+
+alert("Select topic")
+
+return
+
+}
+
+currentTopic=topic
+
+let key=topic+"_"+today
+
+if(!sessions[key]){
+
+sessions[key]={}
+
+drivers.forEach(d=>sessions[key][d.id]=false)
+
+}
+
+save()
+
 renderTable()
 
 }
 
-function deleteDriver(id){
 
-drivers=drivers.filter(d=>d.id!=id)
-
-topics.forEach(topic=>{
-delete attendance[topic][id]
-})
-
-saveData()
-renderTable()
-
-}
 
 function renderTable(){
 
-const tbody=document.querySelector("#driverTable tbody")
+let tbody=document.getElementById("tableBody")
 
 tbody.innerHTML=""
 
-const topic=document.getElementById("topicSelect").value
+let key=currentTopic+"_"+today
 
-drivers.forEach((d,i)=>{
+drivers.forEach(d=>{
 
-const tr=document.createElement("tr")
+let present=sessions[key]?.[d.id]
 
-const present=attendance[topic] && attendance[topic][d.id]
+let row=document.createElement("tr")
 
-tr.innerHTML=`
-
-<td>${i+1}</td>
+row.innerHTML=`
 
 <td>${d.name}</td>
-
-<td>
-<button class="${present?'present':'absent'}"
-onclick="toggleAttendance(${d.id})">
-${present?'Present':'Absent'}
-</button>
-</td>
-
-<td>
-<button onclick="deleteDriver(${d.id})">Delete</button>
-</td>
+<td>${d.id}</td>
+<td>${d.phone}</td>
+<td>${present?"Present":"Absent"}</td>
 
 `
 
-tbody.appendChild(tr)
+tbody.appendChild(row)
 
 })
 
 }
 
-function exportCSV(){
 
-const topic=document.getElementById("topicSelect").value
 
-let csv="Name,Attendance\n"
+async function buildDescriptors(){
 
-drivers.forEach(d=>{
-let status=attendance[topic][d.id]?"Present":"Absent"
-csv+=`${d.name},${status}\n`
-})
+labeledDescriptors=drivers.map(d=>
 
-const blob=new Blob([csv])
+new faceapi.LabeledFaceDescriptors(
 
-const a=document.createElement("a")
+d.id,
 
-a.href=URL.createObjectURL(blob)
+[new Float32Array(d.descriptor)]
 
-a.download=`attendance_${topic}.csv`
+)
 
-a.click()
+)
 
 }
 
-document.getElementById("topicSelect").addEventListener("change",renderTable)
 
-function init(){
 
-loadTopics()
+setInterval(async()=>{
 
-if(!attendance[topics[0]]){
+if(!currentTopic)return
 
-attendance[topics[0]]={}
+const video=document.getElementById("video")
 
-drivers.forEach(d=>{
-attendance[topics[0]][d.id]=false
-})
+const detections=await faceapi.detectAllFaces(video,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors()
+
+if(!detections.length)return
+
+const matcher=new faceapi.FaceMatcher(labeledDescriptors)
+
+detections.forEach(d=>{
+
+const match=matcher.findBestMatch(d.descriptor)
+
+if(match.label!=="unknown"){
+
+markAttendance(match.label)
 
 }
+
+})
+
+},2000)
+
+
+
+function markAttendance(id){
+
+let key=currentTopic+"_"+today
+
+if(!sessions[key])return
+
+sessions[key][id]=true
+
+save()
 
 renderTable()
 
 }
 
-init()
+
+
+function exportExcel(){
+
+let key=currentTopic+"_"+today
+
+let data=[["Name","ID","Phone","Present"]]
+
+drivers.forEach(d=>{
+
+data.push([
+
+d.name,
+d.id,
+d.phone,
+sessions[key][d.id]?"YES":"NO"
+
+])
+
+})
+
+let ws=XLSX.utils.aoa_to_sheet(data)
+
+let wb=XLSX.utils.book_new()
+
+XLSX.utils.book_append_sheet(wb,ws,currentTopic)
+
+XLSX.writeFile(wb,currentTopic+"_"+today+".xlsx")
+
+}
+
+
+
+buildDescriptors()
+
+renderTable()
 
 </script>
 
