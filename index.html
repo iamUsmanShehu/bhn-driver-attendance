@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>BHN Driver Attendance V4.1 - Polished</title>
+<title>BHN Driver Attendance V4.1 - Fixed</title>
 <script defer src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
 <style>
-body { font-family: Arial; background: #f4f6f9; margin:0; padding:0; }
-.container { max-width: 1000px; margin:20px auto; background:#fff; padding:20px; border-radius:10px; box-shadow:0 5px 15px rgba(0,0,0,0.1); }
+body { font-family: Arial; background:#f4f6f9; margin:0; padding:0; }
+.container { max-width:1000px; margin:20px auto; background:#fff; padding:20px; border-radius:10px; box-shadow:0 5px 15px rgba(0,0,0,0.1); }
 h2,h3 { color:#2f2b5f; }
 .dashboard { display:flex; flex-wrap:wrap; gap:15px; margin-bottom:20px; }
 .card { flex:1 1 150px; background:#eef6fb; padding:10px; border-radius:8px; font-weight:bold; text-align:center; }
@@ -25,7 +25,7 @@ tr.present td:nth-child(3) { background:#28a745; color:white; font-weight:bold; 
 <body>
 
 <div class="container">
-<h2>BHN Driver Attendance V4.1</h2>
+<h2>BHN Driver Attendance V4.1 - Fixed</h2>
 
 <div class="dashboard">
 <div class="card">Drivers: <span id="totalDrivers">0</span></div>
@@ -47,7 +47,7 @@ tr.present td:nth-child(3) { background:#28a745; color:white; font-weight:bold; 
 <video id="video" autoplay muted></video>
 <div>
 <button onclick="startCamera()">Start Camera</button>
-<button onclick="captureFace()">Capture Face</button>
+<button onclick="captureFace()">Capture Face (3x)</button>
 <button onclick="startRecognition()">Start Attendance</button>
 <p id="scanStatus"></p>
 </div>
@@ -64,137 +64,137 @@ tr.present td:nth-child(3) { background:#28a745; color:white; font-weight:bold; 
 </div>
 
 <script>
-let drivers = JSON.parse(localStorage.getItem("drivers")) || []
-let topics = JSON.parse(localStorage.getItem("topics")) || ["Orientation"]
-let attendance = JSON.parse(localStorage.getItem("attendance")) || {}
-
-let scanCount = 0, tempDescriptors = [], recognitionInterval = null
-const video = document.getElementById("video")
+let drivers = JSON.parse(localStorage.getItem("drivers")) || [];
+let topics = JSON.parse(localStorage.getItem("topics")) || ["Orientation"];
+let attendance = JSON.parse(localStorage.getItem("attendance")) || {};
+let scanCount = 0, tempDescriptors = [], recognitionInterval = null;
+const video = document.getElementById("video");
 
 async function loadModels(){
-  await faceapi.nets.tinyFaceDetector.loadFromUri('weights')
-  await faceapi.nets.faceLandmark68Net.loadFromUri('weights')
-  await faceapi.nets.faceRecognitionNet.loadFromUri('weights')
+  await faceapi.nets.tinyFaceDetector.loadFromUri('weights');
+  await faceapi.nets.faceLandmark68Net.loadFromUri('weights');
+  await faceapi.nets.faceRecognitionNet.loadFromUri('weights');
 }
 
 function save(){
-  localStorage.setItem("drivers",JSON.stringify(drivers))
-  localStorage.setItem("topics",JSON.stringify(topics))
-  localStorage.setItem("attendance",JSON.stringify(attendance))
+  localStorage.setItem("drivers",JSON.stringify(drivers));
+  localStorage.setItem("topics",JSON.stringify(topics));
+  localStorage.setItem("attendance",JSON.stringify(attendance));
 }
 
 function speak(text){
-  const msg = new SpeechSynthesisUtterance(text)
-  speechSynthesis.speak(msg)
+  const msg = new SpeechSynthesisUtterance(text);
+  speechSynthesis.speak(msg);
 }
 
 function loadTopics(){
-  const select=document.getElementById("topicSelect")
-  select.innerHTML=""
+  const select = document.getElementById("topicSelect");
+  select.innerHTML = "";
   topics.forEach(t=>{
-    let o=document.createElement("option")
-    o.value=t
-    o.textContent=t
-    select.appendChild(o)
-  })
-  render() // re-render table on topic change
+    const o = document.createElement("option");
+    o.value = t;
+    o.textContent = t;
+    select.appendChild(o);
+    if(!attendance[t]) attendance[t] = {};
+    drivers.forEach(d=>{ if(attendance[t][d.name]===undefined) attendance[t][d.name]=false; });
+  });
+  render();
 }
 
-document.getElementById("topicSelect").addEventListener("change", render)
+document.getElementById("topicSelect").addEventListener("change", render);
 
 function addTopic(){
-  const t=document.getElementById("newTopic").value.trim()
-  if(!t) return
-  topics.push(t)
-  attendance[t]={}
-  drivers.forEach(d=>attendance[t][d.name]=false)
-  document.getElementById("newTopic").value = ""
-  save()
-  loadTopics()
+  const t = document.getElementById("newTopic").value.trim();
+  if(!t) return;
+  topics.push(t);
+  attendance[t] = {};
+  drivers.forEach(d => attendance[t][d.name] = false);
+  document.getElementById("newTopic").value = "";
+  save();
+  loadTopics();
 }
 
 async function startCamera(){
-  const stream=await navigator.mediaDevices.getUserMedia({video:true})
-  video.srcObject=stream
+  const stream = await navigator.mediaDevices.getUserMedia({video:true});
+  video.srcObject = stream;
 }
 
 async function captureFace(){
-  const name=document.getElementById("driverName").value.trim()
-  if(!name) return alert("Enter driver name")
-  const detection=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor()
-  if(!detection) return alert("Face not detected")
-  tempDescriptors.push(Array.from(detection.descriptor))
-  scanCount++
-  document.getElementById("scanStatus").innerText=`Face Scan ${scanCount} / 3`
+  const name = document.getElementById("driverName").value.trim();
+  if(!name) return alert("Enter driver name");
+  const detection = await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+  if(!detection) return alert("Face not detected");
+  tempDescriptors.push(Array.from(detection.descriptor));
+  scanCount++;
+  document.getElementById("scanStatus").innerText = `Face Scan ${scanCount}/3`;
   if(scanCount===3){
-    drivers.push({name, descriptors:tempDescriptors})
-    topics.forEach(t=>{
-      if(!attendance[t]) attendance[t]={}
-      attendance[t][name]=false
-    })
-    scanCount=0
-    tempDescriptors=[]
-    document.getElementById("scanStatus").innerText=""
-    document.getElementById("driverName").value=""
-    save()
-    render()
-    alert("Driver Registered Successfully")
+    drivers.push({name, descriptors:tempDescriptors});
+    topics.forEach(t => {
+      if(!attendance[t]) attendance[t] = {};
+      attendance[t][name] = false;
+    });
+    scanCount=0; tempDescriptors=[];
+    document.getElementById("scanStatus").innerText = "";
+    document.getElementById("driverName").value = "";
+    save();
+    render();
+    alert("Driver Registered Successfully");
   }
 }
 
 function render(){
-  const tbody=document.getElementById("tableBody")
-  tbody.innerHTML=""
-  const topic=document.getElementById("topicSelect").value
-  let present=0
+  const tbody = document.getElementById("tableBody");
+  tbody.innerHTML = "";
+  const topic = document.getElementById("topicSelect").value;
+  let present = 0;
   drivers.forEach((d,i)=>{
-    const status=attendance[topic] && attendance[topic][d.name]
-    if(status) present++
-    const tr=document.createElement("tr")
-    if(status) tr.classList.add("present")
-    tr.innerHTML=`<td>${i+1}</td><td>${d.name}</td><td>${status?'Present':'Absent'}</td>`
-    tbody.appendChild(tr)
-  })
-  document.getElementById("totalDrivers").innerText=drivers.length
-  document.getElementById("presentCount").innerText=present
-  document.getElementById("absentCount").innerText=drivers.length-present
+    const status = attendance[topic] && attendance[topic][d.name];
+    if(status) present++;
+    const tr = document.createElement("tr");
+    if(status) tr.classList.add("present");
+    tr.innerHTML = `<td>${i+1}</td><td>${d.name}</td><td>${status?'Present':'Absent'}</td>`;
+    tbody.appendChild(tr);
+  });
+  document.getElementById("totalDrivers").innerText = drivers.length;
+  document.getElementById("presentCount").innerText = present;
+  document.getElementById("absentCount").innerText = drivers.length - present;
 }
 
 async function startRecognition(){
-  if(recognitionInterval) clearInterval(recognitionInterval)
+  if(recognitionInterval) clearInterval(recognitionInterval);
   recognitionInterval = setInterval(async ()=>{
-    const detections = await faceapi.detectAllFaces(video,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors()
-    const topic=document.getElementById("topicSelect").value
+    if(!video.srcObject) return;
+    const detections = await faceapi.detectAllFaces(video,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
+    const topic = document.getElementById("topicSelect").value;
     detections.forEach(d=>{
-      let bestMatch=null, min=0.5
+      let bestMatch = null, min = 0.5;
       drivers.forEach(driver=>{
         driver.descriptors.forEach(desc=>{
-          const dist=faceapi.euclideanDistance(d.descriptor,new Float32Array(desc))
-          if(dist<min){ min=dist; bestMatch=driver.name }
-        })
-      })
+          const dist = faceapi.euclideanDistance(d.descriptor,new Float32Array(desc));
+          if(dist<min){ min = dist; bestMatch = driver.name; }
+        });
+      });
       if(bestMatch && !attendance[topic][bestMatch]){
-        attendance[topic][bestMatch]=true
-        speak(`Attendance recorded for ${bestMatch}`)
-        save()
-        render()
+        attendance[topic][bestMatch] = true;
+        speak(`Attendance recorded for ${bestMatch}`);
+        save();
+        render();
       }
-    })
-  },2000)
+    });
+  },2000);
 }
 
 async function init(){
-  await loadModels()
-  loadTopics()
+  await loadModels();
+  loadTopics();
   if(!attendance[topics[0]]){
-    attendance[topics[0]]={}
-    drivers.forEach(d=>attendance[topics[0]][d.name]=false)
+    attendance[topics[0]] = {};
+    drivers.forEach(d => attendance[topics[0]][d.name] = false);
   }
-  render()
+  render();
 }
 
-init()
+init();
 </script>
-
 </body>
 </html>
