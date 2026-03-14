@@ -1,127 +1,126 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>BHN AI Driver Attendance</title>
 
-<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<meta charset="UTF-8">
+<title>BHN Driver Attendance V4.1</title>
+
+<script defer src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
 
 <style>
 
 body{
 font-family:Arial;
-background:#f4f6fb;
-text-align:center;
-margin:0;
-}
-
-header{
-background:#1e2a78;
-color:white;
-padding:15px;
-font-size:22px;
+background:#f4f6f9;
+padding:20px;
 }
 
 .container{
-width:95%;
-max-width:1200px;
+max-width:1000px;
 margin:auto;
-}
-
-.controls{
-display:flex;
-flex-wrap:wrap;
-gap:10px;
-justify-content:center;
-margin:15px 0;
-}
-
-input,select,button{
-padding:10px;
-border-radius:6px;
-border:1px solid #ccc;
-}
-
-button{
-background:#1e2a78;
-color:white;
-cursor:pointer;
+background:white;
+padding:20px;
+border-radius:10px;
+box-shadow:0 0 10px rgba(0,0,0,0.1);
 }
 
 video{
-border:3px solid #333;
-border-radius:10px;
+width:350px;
+border:3px solid black;
+}
+
+button{
+padding:10px;
+margin:5px;
+cursor:pointer;
 }
 
 table{
 width:100%;
 border-collapse:collapse;
 margin-top:20px;
-background:white;
 }
 
 th,td{
-border:1px solid #ddd;
+border:1px solid #ccc;
 padding:8px;
+text-align:center;
 }
 
-th{
-background:#1e2a78;
+.present{
+background:#4caf50;
 color:white;
 }
 
+.dashboard{
+display:flex;
+gap:20px;
+margin-bottom:20px;
+}
+
+.card{
+background:#eee;
+padding:10px;
+border-radius:8px;
+}
+
 </style>
+
 </head>
 
 <body>
 
-<header>BHN AI Driver Attendance System</header>
-
 <div class="container">
+
+<h2>BHN Driver Face Attendance V4.1</h2>
+
+<div class="dashboard">
+
+<div class="card">Drivers: <span id="totalDrivers">0</span></div>
+<div class="card">Present: <span id="presentCount">0</span></div>
+<div class="card">Absent: <span id="absentCount">0</span></div>
+
+</div>
+
+<h3>Training Topic</h3>
+
+<select id="topicSelect"></select>
+
+<input id="newTopic" placeholder="New Topic">
+<button onclick="addTopic()">Add Topic</button>
+
+<hr>
 
 <h3>Register Driver</h3>
 
-<div class="controls">
+<input id="driverName" placeholder="Driver Name">
 
-<input id="name" placeholder="Driver Name">
-<input id="driverId" placeholder="Driver ID">
-<input id="phone" placeholder="Phone">
+<br><br>
 
-<button onclick="registerDriver()">Register Face</button>
+<video id="video" autoplay muted></video>
 
-</div>
+<br>
 
-<video id="video" width="400" height="300" autoplay muted></video>
+<button onclick="startCamera()">Start Camera</button>
+<button onclick="captureFace()">Capture Face</button>
+<button onclick="startRecognition()">Start Attendance</button>
 
-<h3>Training Session</h3>
+<p id="scanStatus"></p>
 
-<div class="controls">
-
-<select id="topic">
-<option value="">Select Topic</option>
-<option>TYRE & SAFETY</option>
-<option>JOURNEY MANAGEMENT</option>
-<option>DEFENSIVE DRIVING</option>
-<option>VEHICLE MAINTENANCE</option>
-</select>
-
-<button onclick="startSession()">Start Session</button>
-<button onclick="exportExcel()">Export Excel</button>
-
-</div>
+<hr>
 
 <h3>Attendance</h3>
 
 <table>
 
 <thead>
+
 <tr>
+<th>#</th>
 <th>Name</th>
-<th>ID</th>
-<th>Phone</th>
 <th>Status</th>
 </tr>
+
 </thead>
 
 <tbody id="tableBody"></tbody>
@@ -133,192 +132,178 @@ color:white;
 <script>
 
 let drivers = JSON.parse(localStorage.getItem("drivers")) || []
-let sessions = JSON.parse(localStorage.getItem("sessions")) || {}
+let topics = JSON.parse(localStorage.getItem("topics")) || ["Orientation"]
+let attendance = JSON.parse(localStorage.getItem("attendance")) || {}
 
-let currentTopic=""
-let today=new Date().toISOString().split("T")[0]
+let scanCount = 0
+let tempDescriptors = []
 
-let labeledDescriptors=[]
-
-async function startCamera(){
-
-const stream=await navigator.mediaDevices.getUserMedia({video:true})
-
-document.getElementById("video").srcObject=stream
-
-}
-
-startCamera()
-
-
+const video = document.getElementById("video")
 
 async function loadModels(){
 
-await faceapi.nets.tinyFaceDetector.loadFromUri("./weights")
-await faceapi.nets.faceLandmark68Net.loadFromUri("./weights")
-await faceapi.nets.faceRecognitionNet.loadFromUri("./weights")
+await faceapi.nets.tinyFaceDetector.loadFromUri('weights')
+await faceapi.nets.faceLandmark68Net.loadFromUri('weights')
+await faceapi.nets.faceRecognitionNet.loadFromUri('weights')
 
 }
-
-loadModels()
-
-
-
-async function registerDriver(){
-
-let name=document.getElementById("name").value
-let id=document.getElementById("driverId").value
-let phone=document.getElementById("phone").value
-
-if(!name||!id||!phone){
-
-alert("Fill all fields")
-return
-
-}
-
-const video=document.getElementById("video")
-
-const detection=await faceapi.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor()
-
-if(!detection){
-
-alert("Face not detected")
-
-return
-
-}
-
-drivers.push({
-
-name,
-id,
-phone,
-descriptor:Array.from(detection.descriptor)
-
-})
-
-save()
-
-alert("Driver registered")
-
-buildDescriptors()
-
-renderTable()
-
-}
-
-
 
 function save(){
 
 localStorage.setItem("drivers",JSON.stringify(drivers))
-localStorage.setItem("sessions",JSON.stringify(sessions))
+localStorage.setItem("topics",JSON.stringify(topics))
+localStorage.setItem("attendance",JSON.stringify(attendance))
 
 }
 
+function speak(text){
 
-
-function startSession(){
-
-let topic=document.getElementById("topic").value
-
-if(!topic){
-
-alert("Select topic")
-
-return
+const msg = new SpeechSynthesisUtterance(text)
+speechSynthesis.speak(msg)
 
 }
 
-currentTopic=topic
+function loadTopics(){
 
-let key=topic+"_"+today
+const select=document.getElementById("topicSelect")
+select.innerHTML=""
 
-if(!sessions[key]){
+topics.forEach(t=>{
 
-sessions[key]={}
+let o=document.createElement("option")
+o.value=t
+o.textContent=t
 
-drivers.forEach(d=>sessions[key][d.id]=false)
-
-}
-
-save()
-
-renderTable()
-
-}
-
-
-
-function renderTable(){
-
-let tbody=document.getElementById("tableBody")
-
-tbody.innerHTML=""
-
-let key=currentTopic+"_"+today
-
-drivers.forEach(d=>{
-
-let present=sessions[key]?.[d.id]
-
-let row=document.createElement("tr")
-
-row.innerHTML=`
-
-<td>${d.name}</td>
-<td>${d.id}</td>
-<td>${d.phone}</td>
-<td>${present?"Present":"Absent"}</td>
-
-`
-
-tbody.appendChild(row)
+select.appendChild(o)
 
 })
 
 }
 
+function addTopic(){
 
+const t=document.getElementById("newTopic").value
+if(!t) return
 
-async function buildDescriptors(){
+topics.push(t)
 
-labeledDescriptors=drivers.map(d=>
+attendance[t]={}
 
-new faceapi.LabeledFaceDescriptors(
+drivers.forEach(d=>{
+attendance[t][d.name]=false
+})
 
-d.id,
-
-[new Float32Array(d.descriptor)]
-
-)
-
-)
+save()
+loadTopics()
+render()
 
 }
 
+async function startCamera(){
 
+const stream=await navigator.mediaDevices.getUserMedia({video:true})
+video.srcObject=stream
 
-setInterval(async()=>{
+}
 
-if(!currentTopic)return
+async function captureFace(){
 
-const video=document.getElementById("video")
+const name=document.getElementById("driverName").value
+if(!name) return alert("Enter driver name")
 
-const detections=await faceapi.detectAllFaces(video,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors()
+const detection=await faceapi
+.detectSingleFace(video,new faceapi.TinyFaceDetectorOptions())
+.withFaceLandmarks()
+.withFaceDescriptor()
 
-if(!detections.length)return
+if(!detection){
 
-const matcher=new faceapi.FaceMatcher(labeledDescriptors)
+alert("Face not detected")
+return
+
+}
+
+tempDescriptors.push(Array.from(detection.descriptor))
+
+scanCount++
+
+document.getElementById("scanStatus").innerText =
+"Face Scan "+scanCount+" / 3"
+
+if(scanCount===3){
+
+drivers.push({
+name,
+descriptors:tempDescriptors
+})
+
+topics.forEach(t=>{
+
+if(!attendance[t]) attendance[t]={}
+attendance[t][name]=false
+
+})
+
+scanCount=0
+tempDescriptors=[]
+
+save()
+render()
+
+alert("Driver Registered")
+
+}
+
+}
+
+async function startRecognition(){
+
+setInterval(async ()=>{
+
+const detections=await faceapi
+.detectAllFaces(video,new faceapi.TinyFaceDetectorOptions())
+.withFaceLandmarks()
+.withFaceDescriptors()
 
 detections.forEach(d=>{
 
-const match=matcher.findBestMatch(d.descriptor)
+let bestMatch=null
+let min=0.5
 
-if(match.label!=="unknown"){
+drivers.forEach(driver=>{
 
-markAttendance(match.label)
+driver.descriptors.forEach(desc=>{
+
+const dist=faceapi.euclideanDistance(
+d.descriptor,
+new Float32Array(desc)
+)
+
+if(dist<min){
+
+min=dist
+bestMatch=driver.name
+
+}
+
+})
+
+})
+
+if(bestMatch){
+
+const topic=document.getElementById("topicSelect").value
+
+if(!attendance[topic][bestMatch]){
+
+attendance[topic][bestMatch]=true
+
+speak("Attendance recorded for "+bestMatch)
+
+save()
+render()
+
+}
 
 }
 
@@ -326,58 +311,66 @@ markAttendance(match.label)
 
 },2000)
 
-
-
-function markAttendance(id){
-
-let key=currentTopic+"_"+today
-
-if(!sessions[key])return
-
-sessions[key][id]=true
-
-save()
-
-renderTable()
-
 }
 
+function render(){
 
+const tbody=document.getElementById("tableBody")
+tbody.innerHTML=""
 
-function exportExcel(){
+const topic=document.getElementById("topicSelect").value
 
-let key=currentTopic+"_"+today
+let present=0
 
-let data=[["Name","ID","Phone","Present"]]
+drivers.forEach((d,i)=>{
 
-drivers.forEach(d=>{
+const status=attendance[topic] && attendance[topic][d.name]
 
-data.push([
+if(status) present++
 
-d.name,
-d.id,
-d.phone,
-sessions[key][d.id]?"YES":"NO"
+const tr=document.createElement("tr")
 
-])
+tr.innerHTML=`
+
+<td>${i+1}</td>
+<td>${d.name}</td>
+<td class="${status?'present':''}">
+${status?'Present':'Absent'}
+</td>
+
+`
+
+tbody.appendChild(tr)
 
 })
 
-let ws=XLSX.utils.aoa_to_sheet(data)
-
-let wb=XLSX.utils.book_new()
-
-XLSX.utils.book_append_sheet(wb,ws,currentTopic)
-
-XLSX.writeFile(wb,currentTopic+"_"+today+".xlsx")
+document.getElementById("totalDrivers").innerText=drivers.length
+document.getElementById("presentCount").innerText=present
+document.getElementById("absentCount").innerText=drivers.length-present
 
 }
 
+async function init(){
 
+await loadModels()
 
-buildDescriptors()
+loadTopics()
 
-renderTable()
+if(!attendance[topics[0]]){
+
+attendance[topics[0]]={}
+
+drivers.forEach(d=>{
+attendance[topics[0]][d.name]=false
+})
+
+}
+
+render()
+
+}
+
+init()
 
 </script>
 
